@@ -1,0 +1,52 @@
+@Configuration
+public class TomcatClusterConfig implements WebServerFactoryCustomizer<TomcatServeletWebServerFactory>{
+
+  @Override
+  public void customize(final TomcatServletWebServerFactory factory){
+    factory.addContextCustomizers(new TomcatStaticClusterContextCustomizer());
+  }
+
+  class TomcatStaticClusterContextCustomizer implements TomcatContextCusomizer{
+    @Override
+    public void customize(final Context context){
+      context.setDistributable(true);
+      DeltaManager manager = new DeltaManager();
+      manager.setExpireSessionOnShutdown(false):
+      manager.setNotifyListenersOnReplication(true);
+      context.setManager(manager);
+      configureCluster((Engine) context.getParent().getParent());
+    }
+    private void configureCluster(Engine engine){
+      SimpleTcpCluster cluster = new SimpleTcpCluster();
+      cluster.setChannelSendOptions(6);
+      //channel setting
+      GroupChannel channel = new GroupChannel();
+      //membership setting
+      McastService mcastService = new McastService();
+      mcastService.setAddress("228.0.0.4);
+      mcastService.setPort(45564);
+      mcastService.setFrequency(500);
+      mcastService.setDropTime(3000);
+      channel.setMemebershipService(mcastService);
+      //receiver setting
+      NioReceiver receiver = new NioReceiver();
+      receiver.setAddress("auto");
+      receiver.setMaxThreads(6);
+      receiver.setPort(4000);//해당 포트 방화벽 해제 필요
+      channel.setChannelReceiver(receiver);
+      //sender setting
+      ReplicationTransmitter sender = new ReplicationTransmitter();
+      sender.setTransport(new PooledParallelSender());
+      channel.setChannelSender(sender);
+      //interceptor setting
+      channel.addInterceptor(new TcpPingInterceptor());
+      channel.addInterceptor(new TcpFailureDetector());
+      channle.addInterceptor(new MessageDispatchInterceptor());
+      cluster.addValve(new ReplicationValve());
+      cluster.addValve(new JvmRouteBinderValve());
+      cluster.setChannel(channel);
+      cluster.addClusterListener(new ClusterSessionListener());
+      engine.setCluster(cluster);
+    }
+  }
+}
